@@ -1,21 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Target, 
-  TrendingUp, 
-  CheckCircle2, 
-  Clock, 
-  AlertCircle, 
-  Plus, 
-  Edit3, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Target,
+  TrendingUp,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Plus,
+  Edit3,
   Trash2,
-  Calendar,
   BarChart3,
   ChevronRight,
   Save,
   X
 } from 'lucide-react';
 
-// --- 类型定义 ---
 interface Milestone {
   id: string;
   title: string;
@@ -27,7 +25,7 @@ interface Objective {
   id: string;
   title: string;
   description: string;
-  category: 'growth' | 'project' | 'operation' | 'innovation';
+  category: 'content' | 'market' | 'outreach' | 'growth';
   targetValue: number;
   currentValue: number;
   unit: string;
@@ -38,21 +36,20 @@ interface Objective {
   updatedAt: string;
 }
 
-// --- 配置与模拟数据 ---
 const INITIAL_OBJECTIVES: Objective[] = [
   {
     id: '1',
-    title: 'Q2 产品功能迭代',
-    description: '完成核心模块的重构与新功能开发，提升系统稳定性',
-    category: 'project',
-    targetValue: 100,
-    currentValue: 65,
-    unit: '%',
+    title: 'Q2 产品宣传素材产出',
+    description: '完成主力产品的海外宣传图文、视频脚本及多语言文案',
+    category: 'content',
+    targetValue: 20,
+    currentValue: 8,
+    unit: '篇',
     deadline: '2026-06-30',
     status: 'on_track',
     milestones: [
-      { id: 'm1', title: '需求评审完成', completed: true, dueDate: '2026-04-01' },
-      { id: 'm2', title: '技术方案确定', completed: true, dueDate: '2026-04-10' },
+      { id: 'm1', title: '确定产品卖点清单', completed: true, dueDate: '2026-04-01' },
+      { id: 'm2', title: '完成首批5篇图文', completed: true, dueDate: '2026-04-10' },
     ],
     createdAt: '2026-03-01',
     updatedAt: '2026-04-08',
@@ -60,59 +57,70 @@ const INITIAL_OBJECTIVES: Objective[] = [
 ];
 
 const CATEGORIES = {
-  growth: { label: '个人成长', color: 'bg-emerald-500', lightColor: 'bg-emerald-50', textColor: 'text-emerald-700' },
-  project: { label: '项目交付', color: 'bg-blue-500', lightColor: 'bg-blue-50', textColor: 'text-blue-700' },
-  operation: { label: '运营优化', color: 'bg-amber-500', lightColor: 'bg-amber-50', textColor: 'text-amber-700' },
-  innovation: { label: '创新探索', color: 'bg-purple-500', lightColor: 'bg-purple-50', textColor: 'text-purple-700' },
+  content:  { label: '内容创作', color: 'bg-blue-500',    lightColor: 'bg-blue-50',    textColor: 'text-blue-700'    },
+  market:   { label: '市场拓展', color: 'bg-purple-500',  lightColor: 'bg-purple-50',  textColor: 'text-purple-700'  },
+  outreach: { label: '客户触达', color: 'bg-emerald-500', lightColor: 'bg-emerald-50', textColor: 'text-emerald-700' },
+  growth:   { label: '转化增长', color: 'bg-amber-500',   lightColor: 'bg-amber-50',   textColor: 'text-amber-700'   },
 };
 
 const STATUS_CONFIG = {
-  on_track: { label: '正常推进', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: CheckCircle2 },
-  at_risk: { label: '存在风险', color: 'bg-amber-100 text-amber-800 border-amber-200', icon: AlertCircle },
-  delayed: { label: '已延期', color: 'bg-rose-100 text-rose-800 border-rose-200', icon: Clock },
-  completed: { label: '已完成', color: 'bg-slate-100 text-slate-800 border-slate-200', icon: CheckCircle2 },
+  on_track:  { label: '正常推进', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: CheckCircle2 },
+  at_risk:   { label: '存在风险', color: 'bg-amber-100 text-amber-800 border-amber-200',       icon: AlertCircle  },
+  delayed:   { label: '已延期',   color: 'bg-rose-100 text-rose-800 border-rose-200',          icon: Clock        },
+  completed: { label: '已完成',   color: 'bg-slate-100 text-slate-800 border-slate-200',       icon: CheckCircle2 },
 };
 
-// --- 主应用组件 ---
-export default function OKRDashboard() {
-  const [objectives, setObjectives] = useState<Objective[]>(() => {
-    const saved = localStorage.getItem('okr-data');
+function loadData(): Objective[] {
+  try {
+    const saved = localStorage.getItem('okr-objectives');
     return saved ? JSON.parse(saved) : INITIAL_OBJECTIVES;
-  });
-  
-  const [selectedObjective, setSelectedObjective] = useState<Objective | null>(null);
+  } catch {
+    return INITIAL_OBJECTIVES;
+  }
+}
+
+function saveData(data: Objective[]) {
+  try {
+    localStorage.setItem('okr-objectives', JSON.stringify(data));
+  } catch {
+    // ignore
+  }
+}
+
+export default function OKRDashboard() {
+  const [objectives, setObjectives] = useState<Objective[]>(loadData);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedObjective = objectives.find(o => o.id === selectedId) ?? null;
   const [showAddModal, setShowAddModal] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  // 同步本地存储
   useEffect(() => {
-    localStorage.setItem('okr-data', JSON.stringify(objectives));
+    saveData(objectives);
   }, [objectives]);
 
-  // 计算统计数据
   const stats = {
-    total: objectives.length,
-    completed: objectives.filter(o => o.status === 'completed').length,
-    onTrack: objectives.filter(o => o.status === 'on_track').length,
-    atRisk: objectives.filter(o => o.status === 'at_risk' || o.status === 'delayed').length,
-    avgProgress: objectives.length > 0 
+    total:       objectives.length,
+    completed:   objectives.filter(o => o.status === 'completed').length,
+    onTrack:     objectives.filter(o => o.status === 'on_track').length,
+    atRisk:      objectives.filter(o => o.status === 'at_risk' || o.status === 'delayed').length,
+    avgProgress: objectives.length > 0
       ? Math.round(objectives.reduce((acc, o) => acc + (o.currentValue / o.targetValue) * 100, 0) / objectives.length)
       : 0,
   };
 
-  const handleUpdateProgress = (id: string, newValue: number) => {
-    setObjectives(prev => prev.map(obj => 
-      obj.id === id ? { 
-        ...obj, 
-        currentValue: newValue,
+  const handleUpdateProgress = useCallback((id: string, newValue: number) => {
+    setObjectives(prev => prev.map(obj =>
+      obj.id === id ? {
+        ...obj,
+        currentValue: Math.max(0, Math.min(obj.targetValue, newValue)),
         updatedAt: new Date().toISOString(),
-        status: newValue >= obj.targetValue ? 'completed' : obj.status
+        status: newValue >= obj.targetValue ? 'completed' : obj.status,
       } : obj
     ));
     setLastUpdated(new Date());
-  };
+  }, []);
 
-  const handleAddObjective = (newObjective: any) => {
+  const handleAddObjective = useCallback((newObjective: Omit<Objective, 'id' | 'milestones' | 'createdAt' | 'updatedAt'>) => {
     const objective: Objective = {
       ...newObjective,
       id: Date.now().toString(),
@@ -120,18 +128,18 @@ export default function OKRDashboard() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setObjectives([...objectives, objective]);
+    setObjectives(prev => [...prev, objective]);
     setShowAddModal(false);
     setLastUpdated(new Date());
-  };
+  }, []);
 
-  const handleDeleteObjective = (id: string) => {
+  const handleDeleteObjective = useCallback((id: string) => {
     if (window.confirm('确定要删除这个目标吗？')) {
       setObjectives(prev => prev.filter(o => o.id !== id));
-      if (selectedObjective?.id === id) setSelectedObjective(null);
+      setSelectedId(prev => prev === id ? null : prev);
       setLastUpdated(new Date());
     }
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -148,13 +156,12 @@ export default function OKRDashboard() {
               <p className="text-xs text-slate-500">实时更新 • 个人管理系统</p>
             </div>
           </div>
-          
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-xs text-slate-400">最后更新</p>
               <p className="text-sm font-medium text-slate-700">{lastUpdated.toLocaleTimeString()}</p>
             </div>
-            <button 
+            <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-md active:scale-95"
             >
@@ -166,30 +173,26 @@ export default function OKRDashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard title="总目标数" value={stats.total} icon={Target} color="indigo" />
-          <StatCard title="已完成" value={stats.completed} icon={CheckCircle2} color="emerald" />
-          <StatCard title="需关注" value={stats.atRisk} icon={AlertCircle} color="amber" />
-          <StatCard title="平均进度" value={`${stats.avgProgress}%`} icon={TrendingUp} color="blue" />
+          <StatCard title="总目标数"  value={stats.total}            icon={Target}       color="indigo"  />
+          <StatCard title="已完成"    value={stats.completed}         icon={CheckCircle2} color="emerald" />
+          <StatCard title="需关注"    value={stats.atRisk}            icon={AlertCircle}  color="amber"   />
+          <StatCard title="平均进度"  value={`${stats.avgProgress}%`} icon={TrendingUp}   color="blue"    />
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* 左侧列表 */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-indigo-600" />
-                目标概览
-              </h2>
-            </div>
-
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-indigo-600" />
+              目标概览
+            </h2>
             <div className="space-y-4">
               {objectives.map(objective => (
-                <ObjectiveCard 
+                <ObjectiveCard
                   key={objective.id}
                   objective={objective}
-                  onClick={() => setSelectedObjective(objective)}
+                  isSelected={objective.id === selectedId}
+                  onClick={() => setSelectedId(prev => prev === objective.id ? null : objective.id)}
                   onUpdateProgress={handleUpdateProgress}
                 />
               ))}
@@ -201,13 +204,12 @@ export default function OKRDashboard() {
             </div>
           </div>
 
-          {/* 右侧详情 */}
           <div className="lg:col-span-1">
             <div className="sticky top-24">
               {selectedObjective ? (
-                <DetailPanel 
+                <DetailPanel
                   objective={selectedObjective}
-                  onClose={() => setSelectedObjective(null)}
+                  onClose={() => setSelectedId(null)}
                   onUpdate={handleUpdateProgress}
                   onDelete={handleDeleteObjective}
                 />
@@ -226,7 +228,7 @@ export default function OKRDashboard() {
       </main>
 
       {showAddModal && (
-        <AddObjectiveModal 
+        <AddObjectiveModal
           onClose={() => setShowAddModal(false)}
           onAdd={handleAddObjective}
         />
@@ -235,16 +237,18 @@ export default function OKRDashboard() {
   );
 }
 
-// --- 子组件 ---
-
-function StatCard({ title, value, icon: Icon, color }: any) {
-  const colorMap: any = {
-    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+function StatCard({ title, value, icon: Icon, color }: {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: string;
+}) {
+  const colorMap: Record<string, string> = {
+    indigo:  'bg-indigo-50 text-indigo-600 border-indigo-100',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-600 border-amber-100',
-    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    amber:   'bg-amber-50 text-amber-600 border-amber-100',
+    blue:    'bg-blue-50 text-blue-600 border-blue-100',
   };
-
   return (
     <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-4 ${colorMap[color]}`}>
@@ -256,116 +260,280 @@ function StatCard({ title, value, icon: Icon, color }: any) {
   );
 }
 
-function ObjectiveCard({ objective, onClick, onUpdateProgress }: any) {
+function ObjectiveCard({ objective, isSelected, onClick, onUpdateProgress }: {
+  objective: Objective;
+  isSelected: boolean;
+  onClick: () => void;
+  onUpdateProgress: (id: string, val: number) => void;
+}) {
   const progress = objective.targetValue > 0 ? (objective.currentValue / objective.targetValue) * 100 : 0;
-  const category = CATEGORIES[objective.category as keyof typeof CATEGORIES];
-  const status = STATUS_CONFIG[objective.status as keyof typeof STATUS_CONFIG];
+  const category = CATEGORIES[objective.category];
+  const status = STATUS_CONFIG[objective.status];
+
+  const handleMinus = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onUpdateProgress(objective.id, objective.currentValue - 1);
+  };
+
+  const handlePlus = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onUpdateProgress(objective.id, objective.currentValue + 1);
+  };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden" onClick={onClick}>
+    <div
+      className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden ${
+        isSelected ? 'border-indigo-400 ring-1 ring-indigo-300' : 'border-slate-200'
+      }`}
+      onClick={onClick}
+    >
       <div className="p-5">
         <div className="flex justify-between items-start mb-4">
           <div className="flex gap-3">
             <div className={`w-1 h-10 rounded-full ${category.color}`} />
             <div>
               <h3 className="font-bold text-slate-900 mb-1">{objective.title}</h3>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${status.color} flex items-center gap-1 w-fit`}>
-                <status.icon className="w-3 h-3" />{status.label}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${status.color} flex items-center gap-1 w-fit`}>
+                  <status.icon className="w-3 h-3" />{status.label}
+                </span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${category.lightColor} ${category.textColor}`}>
+                  {category.label}
+                </span>
+              </div>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-slate-300" />
+          <ChevronRight className="w-5 h-5 text-slate-300 flex-shrink-0" />
         </div>
-
         <div className="space-y-2">
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">进度: {objective.currentValue}{objective.unit}</span>
+            <span className="text-slate-500">进度: {objective.currentValue} / {objective.targetValue}{objective.unit}</span>
             <span className="font-bold text-indigo-600">{Math.round(progress)}%</span>
           </div>
           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className={`h-full transition-all duration-500 ${category.color}`} style={{ width: `${Math.min(progress, 100)}%` }} />
+            <div
+              className={`h-full transition-all duration-500 ${category.color}`}
+              style={{ width: `${Math.min(progress, 100)}%` }}
+            />
           </div>
         </div>
       </div>
-      <div className="bg-slate-50 px-5 py-2 border-t border-slate-100 flex justify-end gap-2" onClick={e => e.stopPropagation()}>
-        <button onClick={() => onUpdateProgress(objective.id, Math.max(0, objective.currentValue - 1))} className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50">-</button>
-        <button onClick={() => onUpdateProgress(objective.id, Math.min(objective.targetValue, objective.currentValue + 1))} className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50">+</button>
+      <div className="bg-slate-50 px-5 py-2 border-t border-slate-100 flex items-center justify-between">
+        <span className="text-xs text-slate-400">截止 {objective.deadline}</span>
+        <div className="flex gap-2">
+          <button
+            onClick={handleMinus}
+            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold"
+          >-</button>
+          <button
+            onClick={handlePlus}
+            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold"
+          >+</button>
+        </div>
       </div>
     </div>
   );
 }
 
-function DetailPanel({ objective, onClose, onUpdate, onDelete }: any) {
+function DetailPanel({ objective, onClose, onUpdate, onDelete }: {
+  objective: Objective;
+  onClose: () => void;
+  onUpdate: (id: string, val: number) => void;
+  onDelete: (id: string) => void;
+}) {
   const [editMode, setEditMode] = useState(false);
   const [tempValue, setTempValue] = useState(objective.currentValue);
-  const category = CATEGORIES[objective.category as keyof typeof CATEGORIES];
+
+  useEffect(() => {
+    setTempValue(objective.currentValue);
+  }, [objective.currentValue]);
+
+  const category = CATEGORIES[objective.category];
+  const progress = Math.min(100, Math.round((objective.currentValue / objective.targetValue) * 100));
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
       <div className={`h-1.5 ${category.color}`} />
       <div className="p-6">
         <div className="flex justify-between items-center mb-4">
-          <span className={`text-xs font-bold px-2 py-1 rounded ${category.lightColor} ${category.textColor}`}>{category.label}</span>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <span className={`text-xs font-bold px-2 py-1 rounded ${category.lightColor} ${category.textColor}`}>
+            {category.label}
+          </span>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" />
+          </button>
         </div>
         <h2 className="text-lg font-bold text-slate-900 mb-2">{objective.title}</h2>
-        <p className="text-slate-500 text-sm mb-6">{objective.description}</p>
-        
-        <div className="bg-slate-50 rounded-lg p-4 mb-6">
+        <p className="text-slate-500 text-sm mb-4">{objective.description}</p>
+
+        <div className="mb-4">
+          <div className="flex justify-between text-xs text-slate-500 mb-1">
+            <span>完成进度</span>
+            <span className="font-bold text-indigo-600">{progress}%</span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full ${category.color} transition-all duration-500`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-lg p-4 mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm text-slate-600">数值更新</span>
             {editMode ? (
               <div className="flex items-center gap-2">
-                <input type="number" value={tempValue} onChange={e => setTempValue(Number(e.target.value))} className="w-16 px-1 border rounded text-sm" />
-                <button onClick={() => { onUpdate(objective.id, tempValue); setEditMode(false); }} className="text-emerald-600"><Save className="w-4 h-4" /></button>
+                <input
+                  type="number"
+                  value={tempValue}
+                  min={0}
+                  max={objective.targetValue}
+                  onChange={e => setTempValue(Number(e.target.value))}
+                  className="w-16 px-1 border rounded text-sm text-center"
+                />
+                <button
+                  onClick={() => { onUpdate(objective.id, tempValue); setEditMode(false); }}
+                  className="text-emerald-600 hover:text-emerald-700"
+                >
+                  <Save className="w-4 h-4" />
+                </button>
+                <button onClick={() => setEditMode(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             ) : (
-              <button onClick={() => setEditMode(true)} className="text-slate-400"><Edit3 className="w-4 h-4" /></button>
+              <button onClick={() => setEditMode(true)} className="text-slate-400 hover:text-slate-600">
+                <Edit3 className="w-4 h-4" />
+              </button>
             )}
           </div>
-          <div className="text-xl font-bold text-indigo-600">{objective.currentValue} / {objective.targetValue} {objective.unit}</div>
+          <div className="text-xl font-bold text-indigo-600">
+            {objective.currentValue} / {objective.targetValue} {objective.unit}
+          </div>
         </div>
 
-        <button onClick={() => onDelete(objective.id)} className="w-full py-2 flex items-center justify-center gap-2 text-rose-600 bg-rose-50 rounded-lg text-sm hover:bg-rose-100 transition-colors">
-          <Trash2 className="w-4 h-4" /> 删除目标
+        <div className="text-xs text-slate-400 mb-6">
+          截止日期：{objective.deadline} · 更新于 {new Date(objective.updatedAt).toLocaleDateString()}
+        </div>
+
+        <button
+          onClick={() => onDelete(objective.id)}
+          className="w-full py-2 flex items-center justify-center gap-2 text-rose-600 bg-rose-50 rounded-lg text-sm hover:bg-rose-100 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+          删除目标
         </button>
       </div>
     </div>
   );
 }
 
-function AddObjectiveModal({ onClose, onAdd }: any) {
+function AddObjectiveModal({ onClose, onAdd }: {
+  onClose: () => void;
+  onAdd: (data: Omit<Objective, 'id' | 'milestones' | 'createdAt' | 'updatedAt'>) => void;
+}) {
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    category: 'project',
-    targetValue: 100,
+    title:        '',
+    description:  '',
+    category:     'content' as Objective['category'],
+    targetValue:  100,
     currentValue: 0,
-    unit: '%',
-    deadline: new Date().toISOString().split('T')[0],
-    status: 'on_track'
+    unit:         '%',
+    deadline:     new Date().toISOString().split('T')[0],
+    status:       'on_track' as Objective['status'],
   });
+
+  const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) =>
+    setFormData(prev => ({ ...prev, [key]: value }));
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-lg font-bold mb-4">新建 OKR 目标</h2>
         <div className="space-y-4">
-          <input placeholder="目标名称" className="w-full border p-2 rounded" onChange={e => setFormData({...formData, title: e.target.value})} />
-          <textarea placeholder="具体描述" className="w-full border p-2 rounded" onChange={e => setFormData({...formData, description: e.target.value})} />
-          <div className="grid grid-cols-2 gap-4">
-             <input type="number" placeholder="目标值" className="border p-2 rounded" onChange={e => setFormData({...formData, targetValue: Number(e.target.value)})} />
-             <input placeholder="单位 (如 %)" className="border p-2 rounded" onChange={e => setFormData({...formData, unit: e.target.value})} />
+          <input
+            placeholder="目标名称 *"
+            className="w-full border p-2 rounded"
+            value={formData.title}
+            onChange={e => set('title', e.target.value)}
+          />
+          <textarea
+            placeholder="具体描述"
+            className="w-full border p-2 rounded"
+            value={formData.description}
+            onChange={e => set('description', e.target.value)}
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">目标值</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded"
+                value={formData.targetValue}
+                onChange={e => set('targetValue', Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">当前值</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded"
+                value={formData.currentValue}
+                onChange={e => set('currentValue', Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">单位</label>
+              <input
+                placeholder="如 %"
+                className="w-full border p-2 rounded"
+                value={formData.unit}
+                onChange={e => set('unit', e.target.value)}
+              />
+            </div>
           </div>
-          <select className="w-full border p-2 rounded" onChange={e => setFormData({...formData, category: e.target.value})}>
-            <option value="project">项目交付</option>
-            <option value="growth">个人成长</option>
-            <option value="operation">运营优化</option>
-            <option value="innovation">创新探索</option>
+          <select
+            className="w-full border p-2 rounded"
+            value={formData.category}
+            onChange={e => set('category', e.target.value as Objective['category'])}
+          >
+            <option value="content">内容创作</option>
+            <option value="market">市场拓展</option>
+            <option value="outreach">客户触达</option>
+            <option value="growth">转化增长</option>
           </select>
+          <select
+            className="w-full border p-2 rounded"
+            value={formData.status}
+            onChange={e => set('status', e.target.value as Objective['status'])}
+          >
+            <option value="on_track">正常推进</option>
+            <option value="at_risk">存在风险</option>
+            <option value="delayed">已延期</option>
+          </select>
+          <input
+            type="date"
+            className="w-full border p-2 rounded"
+            value={formData.deadline}
+            onChange={e => set('deadline', e.target.value)}
+          />
           <div className="flex gap-2 pt-2">
-            <button onClick={onClose} className="flex-1 py-2 border rounded">取消</button>
-            <button onClick={() => onAdd(formData)} className="flex-1 py-2 bg-indigo-600 text-white rounded shadow-md">保存目标</button>
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 border rounded hover:bg-slate-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => { if (formData.title.trim()) onAdd(formData); }}
+              disabled={!formData.title.trim()}
+              className="flex-1 py-2 bg-indigo-600 text-white rounded shadow-md hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              保存目标
+            </button>
           </div>
         </div>
       </div>
