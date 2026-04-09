@@ -10,7 +10,6 @@ import {
   Trash2,
   BarChart3,
   ChevronRight,
-  Save,
   X
 } from 'lucide-react';
 
@@ -120,6 +119,13 @@ export default function OKRDashboard() {
     setLastUpdated(new Date());
   }, []);
 
+  const handleEditObjective = useCallback((id: string, data: Partial<Objective>) => {
+    setObjectives(prev => prev.map(obj =>
+      obj.id === id ? { ...obj, ...data } : obj
+    ));
+    setLastUpdated(new Date());
+  }, []);
+
   const handleAddObjective = useCallback((newObjective: Omit<Objective, 'id' | 'milestones' | 'createdAt' | 'updatedAt'>) => {
     const objective: Objective = {
       ...newObjective,
@@ -212,6 +218,7 @@ export default function OKRDashboard() {
                   onClose={() => setSelectedId(null)}
                   onUpdate={handleUpdateProgress}
                   onDelete={handleDeleteObjective}
+                  onEdit={handleEditObjective}
                 />
               ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
@@ -219,7 +226,7 @@ export default function OKRDashboard() {
                     <Target className="w-8 h-8 text-slate-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">选择目标查看详情</h3>
-                  <p className="text-slate-500 text-sm">点击左侧卡片查看里程碑和更新记录</p>
+                  <p className="text-slate-500 text-sm">点击左侧卡片查看并编辑目标</p>
                 </div>
               )}
             </div>
@@ -337,21 +344,150 @@ function ObjectiveCard({ objective, isSelected, onClick, onUpdateProgress }: {
   );
 }
 
-function DetailPanel({ objective, onClose, onUpdate, onDelete }: {
+function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
   objective: Objective;
   onClose: () => void;
   onUpdate: (id: string, val: number) => void;
   onDelete: (id: string) => void;
+  onEdit: (id: string, data: Partial<Objective>) => void;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [tempValue, setTempValue] = useState(objective.currentValue);
+  const [editData, setEditData] = useState({
+    title: objective.title,
+    description: objective.description,
+    category: objective.category,
+    deadline: objective.deadline,
+    status: objective.status,
+    targetValue: objective.targetValue,
+    unit: objective.unit,
+  });
 
   useEffect(() => {
     setTempValue(objective.currentValue);
-  }, [objective.currentValue]);
+    setEditData({
+      title: objective.title,
+      description: objective.description,
+      category: objective.category,
+      deadline: objective.deadline,
+      status: objective.status,
+      targetValue: objective.targetValue,
+      unit: objective.unit,
+    });
+  }, [objective]);
+
+  const setField = <K extends keyof typeof editData>(key: K, value: typeof editData[K]) =>
+    setEditData(prev => ({ ...prev, [key]: value }));
 
   const category = CATEGORIES[objective.category];
   const progress = Math.min(100, Math.round((objective.currentValue / objective.targetValue) * 100));
+
+  if (editMode) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+        <div className={`h-1.5 ${CATEGORIES[editData.category].color}`} />
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-sm font-bold text-slate-700">编辑目标</span>
+            <button onClick={() => setEditMode(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">目标名称</label>
+              <input
+                className="w-full border p-2 rounded text-sm"
+                value={editData.title}
+                onChange={e => setField('title', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">具体描述</label>
+              <textarea
+                className="w-full border p-2 rounded text-sm"
+                rows={3}
+                value={editData.description}
+                onChange={e => setField('description', e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">目标值</label>
+                <input
+                  type="number"
+                  className="w-full border p-2 rounded text-sm"
+                  value={editData.targetValue}
+                  onChange={e => setField('targetValue', Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">单位</label>
+                <input
+                  className="w-full border p-2 rounded text-sm"
+                  value={editData.unit}
+                  onChange={e => setField('unit', e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">分类</label>
+              <select
+                className="w-full border p-2 rounded text-sm"
+                value={editData.category}
+                onChange={e => setField('category', e.target.value as Objective['category'])}
+              >
+                <option value="content">内容创作</option>
+                <option value="market">市场拓展</option>
+                <option value="outreach">客户触达</option>
+                <option value="growth">转化增长</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">状态</label>
+              <select
+                className="w-full border p-2 rounded text-sm"
+                value={editData.status}
+                onChange={e => setField('status', e.target.value as Objective['status'])}
+              >
+                <option value="on_track">正常推进</option>
+                <option value="at_risk">存在风险</option>
+                <option value="delayed">已延期</option>
+                <option value="completed">已完成</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">截止日期</label>
+              <input
+                type="date"
+                className="w-full border p-2 rounded text-sm"
+                value={editData.deadline}
+                onChange={e => setField('deadline', e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setEditMode(false)}
+                className="flex-1 py-2 border rounded text-sm hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  onEdit(objective.id, { ...editData, updatedAt: new Date().toISOString() });
+                  setEditMode(false);
+                }}
+                disabled={!editData.title.trim()}
+                className="flex-1 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-40"
+              >
+                保存修改
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
@@ -361,9 +497,14 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete }: {
           <span className={`text-xs font-bold px-2 py-1 rounded ${category.lightColor} ${category.textColor}`}>
             {category.label}
           </span>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setEditMode(true)} className="text-slate-400 hover:text-slate-600">
+              <Edit3 className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         <h2 className="text-lg font-bold text-slate-900 mb-2">{objective.title}</h2>
         <p className="text-slate-500 text-sm mb-4">{objective.description}</p>
@@ -384,31 +525,22 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete }: {
         <div className="bg-slate-50 rounded-lg p-4 mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm text-slate-600">数值更新</span>
-            {editMode ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={tempValue}
-                  min={0}
-                  max={objective.targetValue}
-                  onChange={e => setTempValue(Number(e.target.value))}
-                  className="w-16 px-1 border rounded text-sm text-center"
-                />
-                <button
-                  onClick={() => { onUpdate(objective.id, tempValue); setEditMode(false); }}
-                  className="text-emerald-600 hover:text-emerald-700"
-                >
-                  <Save className="w-4 h-4" />
-                </button>
-                <button onClick={() => setEditMode(false)} className="text-slate-400 hover:text-slate-600">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <button onClick={() => setEditMode(true)} className="text-slate-400 hover:text-slate-600">
-                <Edit3 className="w-4 h-4" />
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={tempValue}
+                min={0}
+                max={objective.targetValue}
+                onChange={e => setTempValue(Number(e.target.value))}
+                className="w-16 px-1 border rounded text-sm text-center"
+              />
+              <button
+                onClick={() => onUpdate(objective.id, tempValue)}
+                className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                保存
               </button>
-            )}
+            </div>
           </div>
           <div className="text-xl font-bold text-indigo-600">
             {objective.currentValue} / {objective.targetValue} {objective.unit}
