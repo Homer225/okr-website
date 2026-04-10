@@ -10,8 +10,15 @@ import {
   Trash2,
   BarChart3,
   ChevronRight,
-  X
+  X,
+  CalendarDays,
 } from 'lucide-react';
+
+interface DailyLog {
+  id: string;
+  date: string;
+  content: string;
+}
 
 interface Milestone {
   id: string;
@@ -31,6 +38,7 @@ interface Objective {
   deadline: string;
   status: 'on_track' | 'at_risk' | 'delayed' | 'completed';
   milestones: Milestone[];
+  dailyLogs: DailyLog[];
   createdAt: string;
   updatedAt: string;
 }
@@ -50,6 +58,7 @@ const INITIAL_OBJECTIVES: Objective[] = [
       { id: 'm1', title: '确定产品卖点清单', completed: true, dueDate: '2026-04-01' },
       { id: 'm2', title: '完成首批5篇图文', completed: true, dueDate: '2026-04-10' },
     ],
+    dailyLogs: [],
     createdAt: '2026-03-01',
     updatedAt: '2026-04-08',
   }
@@ -72,7 +81,11 @@ const STATUS_CONFIG = {
 function loadData(): Objective[] {
   try {
     const saved = localStorage.getItem('okr-objectives');
-    return saved ? JSON.parse(saved) : INITIAL_OBJECTIVES;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return parsed.map((o: Objective) => ({ ...o, dailyLogs: o.dailyLogs || [] }));
+    }
+    return INITIAL_OBJECTIVES;
   } catch {
     return INITIAL_OBJECTIVES;
   }
@@ -126,11 +139,37 @@ export default function OKRDashboard() {
     setLastUpdated(new Date());
   }, []);
 
-  const handleAddObjective = useCallback((newObjective: Omit<Objective, 'id' | 'milestones' | 'createdAt' | 'updatedAt'>) => {
+  const handleAddLog = useCallback((id: string, content: string) => {
+    const log: DailyLog = {
+      id: Date.now().toString(),
+      date: new Date().toLocaleDateString('zh-CN'),
+      content,
+    };
+    setObjectives(prev => prev.map(obj =>
+      obj.id === id ? {
+        ...obj,
+        dailyLogs: [log, ...(obj.dailyLogs || [])],
+        updatedAt: new Date().toISOString(),
+      } : obj
+    ));
+    setLastUpdated(new Date());
+  }, []);
+
+  const handleDeleteLog = useCallback((objId: string, logId: string) => {
+    setObjectives(prev => prev.map(obj =>
+      obj.id === objId ? {
+        ...obj,
+        dailyLogs: obj.dailyLogs.filter(l => l.id !== logId),
+      } : obj
+    ));
+  }, []);
+
+  const handleAddObjective = useCallback((newObjective: Omit<Objective, 'id' | 'milestones' | 'dailyLogs' | 'createdAt' | 'updatedAt'>) => {
     const objective: Objective = {
       ...newObjective,
       id: Date.now().toString(),
       milestones: [],
+      dailyLogs: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -219,6 +258,8 @@ export default function OKRDashboard() {
                   onUpdate={handleUpdateProgress}
                   onDelete={handleDeleteObjective}
                   onEdit={handleEditObjective}
+                  onAddLog={handleAddLog}
+                  onDeleteLog={handleDeleteLog}
                 />
               ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
@@ -330,29 +371,26 @@ function ObjectiveCard({ objective, isSelected, onClick, onUpdateProgress }: {
       <div className="bg-slate-50 px-5 py-2 border-t border-slate-100 flex items-center justify-between">
         <span className="text-xs text-slate-400">截止 {objective.deadline}</span>
         <div className="flex gap-2">
-          <button
-            onClick={handleMinus}
-            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold"
-          >-</button>
-          <button
-            onClick={handlePlus}
-            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold"
-          >+</button>
+          <button onClick={handleMinus} className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold">-</button>
+          <button onClick={handlePlus}  className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-indigo-50 text-slate-600 font-bold">+</button>
         </div>
       </div>
     </div>
   );
 }
 
-function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
+function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit, onAddLog, onDeleteLog }: {
   objective: Objective;
   onClose: () => void;
   onUpdate: (id: string, val: number) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, data: Partial<Objective>) => void;
+  onAddLog: (id: string, content: string) => void;
+  onDeleteLog: (objId: string, logId: string) => void;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [tempValue, setTempValue] = useState(objective.currentValue);
+  const [logInput, setLogInput] = useState('');
   const [editData, setEditData] = useState({
     title: objective.title,
     description: objective.description,
@@ -382,6 +420,12 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
   const category = CATEGORIES[objective.category];
   const progress = Math.min(100, Math.round((objective.currentValue / objective.targetValue) * 100));
 
+  const handleSubmitLog = () => {
+    if (!logInput.trim()) return;
+    onAddLog(objective.id, logInput.trim());
+    setLogInput('');
+  };
+
   if (editMode) {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
@@ -396,47 +440,25 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
           <div className="space-y-3">
             <div>
               <label className="text-xs text-slate-500 mb-1 block">目标名称</label>
-              <input
-                className="w-full border p-2 rounded text-sm"
-                value={editData.title}
-                onChange={e => setField('title', e.target.value)}
-              />
+              <input className="w-full border p-2 rounded text-sm" value={editData.title} onChange={e => setField('title', e.target.value)} />
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">具体描述</label>
-              <textarea
-                className="w-full border p-2 rounded text-sm"
-                rows={3}
-                value={editData.description}
-                onChange={e => setField('description', e.target.value)}
-              />
+              <textarea className="w-full border p-2 rounded text-sm" rows={3} value={editData.description} onChange={e => setField('description', e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">目标值</label>
-                <input
-                  type="number"
-                  className="w-full border p-2 rounded text-sm"
-                  value={editData.targetValue}
-                  onChange={e => setField('targetValue', Number(e.target.value))}
-                />
+                <input type="number" className="w-full border p-2 rounded text-sm" value={editData.targetValue} onChange={e => setField('targetValue', Number(e.target.value))} />
               </div>
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">单位</label>
-                <input
-                  className="w-full border p-2 rounded text-sm"
-                  value={editData.unit}
-                  onChange={e => setField('unit', e.target.value)}
-                />
+                <input className="w-full border p-2 rounded text-sm" value={editData.unit} onChange={e => setField('unit', e.target.value)} />
               </div>
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">分类</label>
-              <select
-                className="w-full border p-2 rounded text-sm"
-                value={editData.category}
-                onChange={e => setField('category', e.target.value as Objective['category'])}
-              >
+              <select className="w-full border p-2 rounded text-sm" value={editData.category} onChange={e => setField('category', e.target.value as Objective['category'])}>
                 <option value="content">内容创作</option>
                 <option value="market">市场拓展</option>
                 <option value="outreach">客户触达</option>
@@ -445,11 +467,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">状态</label>
-              <select
-                className="w-full border p-2 rounded text-sm"
-                value={editData.status}
-                onChange={e => setField('status', e.target.value as Objective['status'])}
-              >
+              <select className="w-full border p-2 rounded text-sm" value={editData.status} onChange={e => setField('status', e.target.value as Objective['status'])}>
                 <option value="on_track">正常推进</option>
                 <option value="at_risk">存在风险</option>
                 <option value="delayed">已延期</option>
@@ -458,30 +476,15 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">截止日期</label>
-              <input
-                type="date"
-                className="w-full border p-2 rounded text-sm"
-                value={editData.deadline}
-                onChange={e => setField('deadline', e.target.value)}
-              />
+              <input type="date" className="w-full border p-2 rounded text-sm" value={editData.deadline} onChange={e => setField('deadline', e.target.value)} />
             </div>
             <div className="flex gap-2 pt-2">
+              <button onClick={() => setEditMode(false)} className="flex-1 py-2 border rounded text-sm hover:bg-slate-50">取消</button>
               <button
-                onClick={() => setEditMode(false)}
-                className="flex-1 py-2 border rounded text-sm hover:bg-slate-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  onEdit(objective.id, { ...editData, updatedAt: new Date().toISOString() });
-                  setEditMode(false);
-                }}
+                onClick={() => { onEdit(objective.id, { ...editData, updatedAt: new Date().toISOString() }); setEditMode(false); }}
                 disabled={!editData.title.trim()}
                 className="flex-1 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-40"
-              >
-                保存修改
-              </button>
+              >保存修改</button>
             </div>
           </div>
         </div>
@@ -490,7 +493,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden max-h-[85vh] overflow-y-auto">
       <div className={`h-1.5 ${category.color}`} />
       <div className="p-6">
         <div className="flex justify-between items-center mb-4">
@@ -506,6 +509,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
             </button>
           </div>
         </div>
+
         <h2 className="text-lg font-bold text-slate-900 mb-2">{objective.title}</h2>
         <p className="text-slate-500 text-sm mb-4">{objective.description}</p>
 
@@ -515,10 +519,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
             <span className="font-bold text-indigo-600">{progress}%</span>
           </div>
           <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full ${category.color} transition-all duration-500`}
-              style={{ width: `${progress}%` }}
-            />
+            <div className={`h-full ${category.color} transition-all duration-500`} style={{ width: `${progress}%` }} />
           </div>
         </div>
 
@@ -534,10 +535,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
                 onChange={e => setTempValue(Number(e.target.value))}
                 className="w-16 px-1 border rounded text-sm text-center"
               />
-              <button
-                onClick={() => onUpdate(objective.id, tempValue)}
-                className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-              >
+              <button onClick={() => onUpdate(objective.id, tempValue)} className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                 保存
               </button>
             </div>
@@ -547,8 +545,53 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
           </div>
         </div>
 
-        <div className="text-xs text-slate-400 mb-6">
+        <div className="text-xs text-slate-400 mb-5">
           截止日期：{objective.deadline} · 更新于 {new Date(objective.updatedAt).toLocaleDateString()}
+        </div>
+
+        {/* 每日记录板块 */}
+        <div className="border-t border-slate-100 pt-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarDays className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-bold text-slate-700">每日记录</span>
+          </div>
+          <div className="flex gap-2 mb-3">
+            <textarea
+              placeholder="记录今日执行情况..."
+              className="flex-1 border p-2 rounded text-sm resize-none"
+              rows={2}
+              value={logInput}
+              onChange={e => setLogInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleSubmitLog(); }}
+            />
+            <button
+              onClick={handleSubmitLog}
+              disabled={!logInput.trim()}
+              className="px-3 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-40 self-end"
+            >
+              添加
+            </button>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {(objective.dailyLogs || []).length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-3">暂无记录</p>
+            ) : (
+              (objective.dailyLogs || []).map(log => (
+                <div key={log.id} className="bg-slate-50 rounded-lg p-3 group">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-medium text-indigo-600">{log.date}</span>
+                    <button
+                      onClick={() => onDeleteLog(objective.id, log.id)}
+                      className="text-slate-300 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{log.content}</p>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <button
@@ -565,7 +608,7 @@ function DetailPanel({ objective, onClose, onUpdate, onDelete, onEdit }: {
 
 function AddObjectiveModal({ onClose, onAdd }: {
   onClose: () => void;
-  onAdd: (data: Omit<Objective, 'id' | 'milestones' | 'createdAt' | 'updatedAt'>) => void;
+  onAdd: (data: Omit<Objective, 'id' | 'milestones' | 'dailyLogs' | 'createdAt' | 'updatedAt'>) => void;
 }) {
   const [formData, setFormData] = useState({
     title:        '',
@@ -601,64 +644,31 @@ function AddObjectiveModal({ onClose, onAdd }: {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-slate-500 mb-1 block">目标值</label>
-              <input
-                type="number"
-                className="w-full border p-2 rounded"
-                value={formData.targetValue}
-                onChange={e => set('targetValue', Number(e.target.value))}
-              />
+              <input type="number" className="w-full border p-2 rounded" value={formData.targetValue} onChange={e => set('targetValue', Number(e.target.value))} />
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">当前值</label>
-              <input
-                type="number"
-                className="w-full border p-2 rounded"
-                value={formData.currentValue}
-                onChange={e => set('currentValue', Number(e.target.value))}
-              />
+              <input type="number" className="w-full border p-2 rounded" value={formData.currentValue} onChange={e => set('currentValue', Number(e.target.value))} />
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1 block">单位</label>
-              <input
-                placeholder="如 %"
-                className="w-full border p-2 rounded"
-                value={formData.unit}
-                onChange={e => set('unit', e.target.value)}
-              />
+              <input placeholder="如 %" className="w-full border p-2 rounded" value={formData.unit} onChange={e => set('unit', e.target.value)} />
             </div>
           </div>
-          <select
-            className="w-full border p-2 rounded"
-            value={formData.category}
-            onChange={e => set('category', e.target.value as Objective['category'])}
-          >
+          <select className="w-full border p-2 rounded" value={formData.category} onChange={e => set('category', e.target.value as Objective['category'])}>
             <option value="content">内容创作</option>
             <option value="market">市场拓展</option>
             <option value="outreach">客户触达</option>
             <option value="growth">转化增长</option>
           </select>
-          <select
-            className="w-full border p-2 rounded"
-            value={formData.status}
-            onChange={e => set('status', e.target.value as Objective['status'])}
-          >
+          <select className="w-full border p-2 rounded" value={formData.status} onChange={e => set('status', e.target.value as Objective['status'])}>
             <option value="on_track">正常推进</option>
             <option value="at_risk">存在风险</option>
             <option value="delayed">已延期</option>
           </select>
-          <input
-            type="date"
-            className="w-full border p-2 rounded"
-            value={formData.deadline}
-            onChange={e => set('deadline', e.target.value)}
-          />
+          <input type="date" className="w-full border p-2 rounded" value={formData.deadline} onChange={e => set('deadline', e.target.value)} />
           <div className="flex gap-2 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 py-2 border rounded hover:bg-slate-50"
-            >
-              取消
-            </button>
+            <button onClick={onClose} className="flex-1 py-2 border rounded hover:bg-slate-50">取消</button>
             <button
               onClick={() => { if (formData.title.trim()) onAdd(formData); }}
               disabled={!formData.title.trim()}
